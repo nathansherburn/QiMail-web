@@ -60,7 +60,7 @@
       <textarea
         id="body-text"
         placeholder="Body"
-        style="resize: none; height: 10rem;"
+        style="resize: none; height: 10rem"
         oninput="detectSlackLink()"
       ></textarea>
       <div id="email-accounts" style="display: flex; gap: 8px">
@@ -94,13 +94,14 @@
       </div>
     </div>
     <script>
-            function redirectIfNeeded() {
+      function redirectIfNeeded() {
         const redirect = new URLSearchParams(window.location.search).get(
           "redirect"
         );
         if (redirect) {
           window.location = decodeURIComponent(redirect);
-          // window.close();
+          // Close the window after 3 seconds to give the user a chance to "always allow" the redirect
+          setTimeout(() => window.close(), 5000);
         }
       }
 
