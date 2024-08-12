@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QiMail</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+      }
+      h1 {
+        margin: 0;
+      }
+      input,
+      textarea {
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        background-color: #f0f0f0;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #e0e0e0;
+      }
+      hr {
+        width: 100%;
+        border: 1px solid #f5f5f5;
+        margin: 24px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      style="
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 640px;
+        margin: 0 auto;
+      "
+    >
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <h1>QiMail</h1>
+        <button onclick="toggleShowOptions()">⚙️</button>
+      </div>
+      <input type="text" id="subject-text" placeholder="Subject" />
+      <textarea
+        id="body-text"
+        placeholder="Body"
+        style="resize: none"
+        oninput="detectSlackLink()"
+      ></textarea>
+      <div id="email-accounts" style="display: flex; gap: 8px">
+        Loading Email Accounts...
+      </div>
+      <div id="options" style="display: none; flex-direction: column; gap: 8px">
+        <h2>Options</h2>
+        <input
+          type="text"
+          id="email-account-name"
+          placeholder="Email account name"
+        />
+        <input
+          type="text"
+          id="email-account-address"
+          placeholder="Email account address"
+        />
+        <button onclick="addEmailAccount();">Add Email Account</button>
+        <hr />
+        <div id="slack-workspaces" style="display: flex; gap: 8px"></div>
+        <input
+          type="text"
+          id="slack-workspace-name"
+          placeholder="Workspace name"
+        />
+        <input type="text" id="slack-workspace-id" placeholder="Workspace ID" />
+        <button onclick="addSlackWorkspace()">Add Slack Workspace</button>
+        <hr />
+        <input type="text" id="resend-api-key" placeholder="Resend API Key" />
+        <button onclick="saveResendApiKey()">Save Resend API Key</button>
+      </div>
+    </div>
+    <script>
+            function redirectIfNeeded() {
+        const redirect = new URLSearchParams(window.location.search).get(
+          "redirect"
+        );
+        if (redirect) {
+          window.location = decodeURIComponent(redirect);
+          window.close();
+        }
+      }
+
+      redirectIfNeeded();
+
+      function $(selector) {
+        return document.querySelector(selector);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        renderEmailAccounts();
+        $("#resend-api-key").value = localStorage.getItem("resendApiKey");
+        $("#subject-text").focus();
+      });
+
+      function detectSlackLink() {
+        const body = $("#body-text").value;
+        if (body.includes("slack.com/archives")) {
+          console.log("Slack link detected");
+          // regex to find the slack link
+          const slackLink = body.match(
+            /https:\/\/.+?\.slack.com\/archives\/.+?\/p.+?$/
+          )[0];
+          console.log(slackLink);
+          const workspaceName = slackLink.match(
+            /https:\/\/(.+?)\.slack.com/
+          )[1];
+          const channelName = slackLink.match(/archives\/(.+?)\//)[1];
+          const messageTimestamp = slackLink.match(/\/p(.+?)$/)[1];
+          if (workspaceName && channelName && messageTimestamp) {
+            const slackWorkspaces =
+              JSON.parse(localStorage.getItem("slackWorkspaces")) || [];
+            const slackWorkspace = slackWorkspaces.find(
+              (workspace) => workspace.name === workspaceName
+            );
+            if (slackWorkspace) {
+              console.log("Slack workspace found", slackWorkspace);
+              const slackDeeplink = `slack://channel?team=${slackWorkspace.id}&id=${channelName}&message=${messageTimestamp}&host=slack.com`;
+              console.log("Slack deeplink", slackDeeplink);
+              $("#body-text").value += `\n\n${
+                window.location
+              }?redirect=${encodeURIComponent(slackDeeplink)}`;
+            } else {
+              console.log(
+                "Couldn't find Slack workspace in your QiMail settings"
+              );
+            }
+          }
+        } else {
+          console.log("No Slack link detected");
+        }
+      }
+
+      function addEmailAccount() {
+        const emailAccountName = $("#email-account-name").value;
+        const emailAccountAddress = $("#email-account-address").value;
+        const emailAccounts =
+          JSON.parse(localStorage.getItem("emailAccounts")) || [];
+        emailAccounts.push({
+          name: emailAccountName,
+          address: emailAccountAddress,
+        });
+        localStorage.setItem("emailAccounts", JSON.stringify(emailAccounts));
+        $("#email-account-name").value = "";
+        $("#email-account-address").value = "";
+        renderDeletableEmailAccounts();
+      }
+
+      function addSlackWorkspace() {
+        const slackWorkspaceName = document.getElementById(
+          "slack-workspace-name"
+        ).value;
+        const slackWorkspaceId = $("#slack-workspace-id").value;
+        const slackWorkspaces =
+          JSON.parse(localStorage.getItem("slackWorkspaces")) || [];
+        slackWorkspaces.push({
+          name: slackWorkspaceName,
+          id: slackWorkspaceId,
+        });
+        localStorage.setItem(
+          "slackWorkspaces",
+          JSON.stringify(slackWorkspaces)
+        );
+        $("#slack-workspace-name").value = "";
+        $("#slack-workspace-id").value = "";
+        renderDeletableSlackWorkspaces();
+      }
+
+      function renderEmailAccounts() {
+        const emailAccounts =
+          JSON.parse(localStorage.getItem("emailAccounts")) || [];
+        const emailAccountsHtml = emailAccounts.map((emailAccount) => {
+          return `<button onclick="sendEmail('${emailAccount.address}')">${emailAccount.name}</button>`;
+        });
+        $("#email-accounts").innerHTML = emailAccountsHtml.join("");
+      }
+
+      function toggleShowOptions() {
+        if ($("#options").style.display === "flex") {
+          $("#options").style.display = "none";
+          renderEmailAccounts();
+        } else {
+          $("#options").style.display = "flex";
+          renderDeletableEmailAccounts();
+          renderDeletableSlackWorkspaces();
+        }
+      }
+
+      function renderDeletableEmailAccounts() {
+        const emailAccounts =
+          JSON.parse(localStorage.getItem("emailAccounts")) || [];
+        const emailAccountsHtml = emailAccounts.map((emailAccount) => {
+          return `<button onclick="deleteEmailAccount('${emailAccount.address}')">${emailAccount.name} ✖︎</button>`;
+        });
+        $("#email-accounts").innerHTML = emailAccountsHtml.join("");
+      }
+
+      function deleteEmailAccount(emailAccountAddress) {
+        const emailAccounts =
+          JSON.parse(localStorage.getItem("emailAccounts")) || [];
+        const updatedEmailAccounts = emailAccounts.filter(
+          (emailAccount) => emailAccount.address !== emailAccountAddress
+        );
+        localStorage.setItem(
+          "emailAccounts",
+          JSON.stringify(updatedEmailAccounts)
+        );
+        renderDeletableEmailAccounts();
+      }
+
+      function renderDeletableSlackWorkspaces() {
+        const slackWorkspaces =
+          JSON.parse(localStorage.getItem("slackWorkspaces")) || [];
+        const slackWorkspacesHtml = slackWorkspaces.map((slackWorkspace) => {
+          return `<button onclick="deleteSlackWorkspace('${slackWorkspace.id}')">${slackWorkspace.name} ✖︎</button>`;
+        });
+        $("#slack-workspaces").innerHTML =
+          slackWorkspacesHtml.join("") || "Add a Slack workspace";
+      }
+
+      function deleteSlackWorkspace(slackWorkspaceId) {
+        const slackWorkspaces =
+          JSON.parse(localStorage.getItem("slackWorkspaces")) || [];
+        const updatedSlackWorkspaces = slackWorkspaces.filter(
+          (slackWorkspace) => slackWorkspace.id !== slackWorkspaceId
+        );
+        localStorage.setItem(
+          "slackWorkspaces",
+          JSON.stringify(updatedSlackWorkspaces)
+        );
+        renderDeletableSlackWorkspaces();
+      }
+
+      function saveResendApiKey() {
+        const resendApiKey = $("#resend-api-key").value;
+        localStorage.setItem("resendApiKey", resendApiKey);
+      }
+
+      async function sendEmail(emailAccountAddress) {
+        const email = {
+          to: [emailAccountAddress],
+          subject: $("#subject-text").value,
+          text: $("#body-text").value,
+        };
+        let response = await fetch("/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            resendApiKey: localStorage.getItem("resendApiKey"),
+          }),
+        });
+        console.log(response);
+        response = await response.json();
+        if (response.error) {
+          alert(response.error);
+        } else {
+          console.log(response);
+          $("#subject-text").value = "";
+          $("#body-text").value = "";
+        }
+      }
+    </script>
+  </body>
+</html>
