@@ -265,7 +265,7 @@
           subject: $("#subject-text").value,
           text: $("#body-text").value,
         };
-        let response = await fetch("/send-email", {
+        let response = await fetch("/api/send-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
