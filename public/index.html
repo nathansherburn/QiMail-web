@@ -71,12 +71,14 @@
         <input
           type="text"
           id="email-account-name"
-          placeholder="Email account name"
+          placeholder="Email account
+        name"
         />
         <input
           type="text"
           id="email-account-address"
-          placeholder="Email account address"
+          placeholder="Email account
+        address"
         />
         <button onclick="addEmailAccount();">Add Email Account</button>
         <hr />
@@ -84,7 +86,8 @@
         <input
           type="text"
           id="slack-workspace-name"
-          placeholder="Workspace name"
+          placeholder="Workspace
+        name"
         />
         <input type="text" id="slack-workspace-id" placeholder="Workspace ID" />
         <button onclick="addSlackWorkspace()">Add Slack Workspace</button>
@@ -100,7 +103,8 @@
         );
         if (redirect) {
           window.location = decodeURIComponent(redirect);
-          // Close the window after 3 seconds to give the user a chance to "always allow" the redirect
+          // Close the window after 3 seconds to give the user a chance to
+          // "Always allow" the redirect.
           setTimeout(() => window.close(), 5000);
         }
       }
@@ -120,39 +124,97 @@
       function detectSlackLink() {
         const body = $("#body-text").value;
         if (body.includes("slack.com/archives")) {
-          console.log("Slack link detected");
-          // regex to find the slack link
           const slackLink = body.match(
-            /https:\/\/.+?\.slack.com\/archives\/.+?\/p.+?$/
+            /https:\/\/(?:[\w-]+\.)?slack\.com\/archives(?:\/[^\s]*)?/
           )[0];
-          console.log(slackLink);
-          const workspaceName = slackLink.match(
-            /https:\/\/(.+?)\.slack.com/
-          )[1];
-          const channelName = slackLink.match(/archives\/(.+?)\//)[1];
-          const messageTimestamp = slackLink.match(/\/p(.+?)$/)[1];
-          if (workspaceName && channelName && messageTimestamp) {
-            const slackWorkspaces =
-              JSON.parse(localStorage.getItem("slackWorkspaces")) || [];
-            const slackWorkspace = slackWorkspaces.find(
-              (workspace) => workspace.name === workspaceName
-            );
-            if (slackWorkspace) {
-              console.log("Slack workspace found", slackWorkspace);
-              const slackDeeplink = `slack://channel?team=${slackWorkspace.id}&id=${channelName}&message=${messageTimestamp}&host=slack.com`;
-              console.log("Slack deeplink", slackDeeplink);
-              $("#body-text").value += `\n\n${
-                window.location
-              }?redirect=${encodeURIComponent(slackDeeplink)}`;
-            } else {
-              console.log(
-                "Couldn't find Slack workspace in your QiMail settings"
-              );
-            }
-          }
+          const slackLinkUrlParams = getSlackUrlParams(slackLink);
+          const deeplink = constructSlackDeeplink(slackLinkUrlParams);
+          addDeeplinkToBody(deeplink);
         } else {
           console.log("No Slack link detected");
         }
+      }
+
+      function getSlackUrlParams(slackLink) {
+        const workspaceRegex = /https:\/\/([^.]+)\.slack\.com\//;
+        const workspaceMatch = slackLink.match(workspaceRegex);
+        const workspaceName = workspaceMatch ? workspaceMatch[1] : null;
+
+        const channelIdRegex = /\/archives\/([A-Z0-9]+)\//;
+        const channelIdMatch = slackLink.match(channelIdRegex);
+        const channelId = channelIdMatch ? channelIdMatch[1] : null;
+
+        const messageTimestampRegex = /\/p(\d+)/;
+        const messageTimestampMatch = slackLink.match(messageTimestampRegex);
+        const messageTimestamp = messageTimestampMatch
+          ? messageTimestampMatch[1]
+          : null;
+
+        const threadTimestampRegex = /thread_ts=(\d+\.\d+)/;
+        const threadTimestampMatch = slackLink.match(threadTimestampRegex);
+        const threadTimestamp = threadTimestampMatch
+          ? threadTimestampMatch[1]
+          : null;
+
+        return {
+          workspaceName,
+          channelId,
+          messageTimestamp,
+          threadTimestamp,
+        };
+      }
+
+      function constructSlackDeeplink(slackLinkUrlParams) {
+        const { workspaceName, channelId, messageTimestamp, threadTimestamp } =
+          slackLinkUrlParams;
+
+        const slackWorkspaceId = retrieveSlackWorkspaceId(workspaceName);
+
+        if (!slackWorkspaceId) {
+          return "slack://open";
+        }
+
+        let slackDeeplink = "slack://open";
+
+        if (
+          slackWorkspaceId &&
+          channelId &&
+          messageTimestamp &&
+          threadTimestamp
+        ) {
+          slackDeeplink = `slack://channel?team=${slackWorkspaceId}&id=${channelId}&message=${messageTimestamp}&thread_ts=${threadTimestamp}&host=slack.com`;
+        } else if (slackWorkspaceId && channelId && messageTimestamp) {
+          slackDeeplink = `slack://channel?team=${slackWorkspaceId}&id=${channelId}&message=${messageTimestamp}&host=slack.com`;
+        } else if (slackWorkspaceId && channelId) {
+          slackDeeplink = `slack://channel?team=${slackWorkspaceId}&id=${channelId}&host=slack.com`;
+        } else {
+          slackDeeplink = `slack://open?team=${slackWorkspaceId}&host=slack.com`;
+        }
+
+        return slackDeeplink;
+      }
+
+      function retrieveSlackWorkspaceId(workspaceName) {
+        const slackWorkspaces =
+          JSON.parse(localStorage.getItem("slackWorkspaces")) || [];
+        const slackWorkspace = slackWorkspaces.find(
+          (workspace) => workspace.name === workspaceName
+        );
+        console.log(slackWorkspaces, workspaceName);
+        if (slackWorkspace) {
+          console.log("Slack workspace found", slackWorkspace);
+          return slackWorkspace.id;
+        } else {
+          console.log("Couldn't find Slack workspace in your QiMail settings");
+        }
+      }
+
+      function addDeeplinkToBody(deeplink) {
+        $("#body-text").value +=
+          "\n\n" +
+          window.location +
+          "?redirect=" +
+          encodeURIComponent(deeplink);
       }
 
       function addEmailAccount() {
@@ -261,11 +323,7 @@
       }
 
       async function sendEmail(emailAccountAddress) {
-        const email = {
-          to: [emailAccountAddress],
-          subject: $("#subject-text").value,
-          text: $("#body-text").value,
-        };
+        const email = createEmail(emailAccountAddress);
         let response = await fetch("/api/send-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -274,12 +332,22 @@
             resendApiKey: localStorage.getItem("resendApiKey"),
           }),
         });
-        console.log(response);
         response = await response.json();
+        handleSendEmailResponse(response);
+      }
+
+      function createEmail(emailAccountAddress) {
+        return {
+          to: [emailAccountAddress],
+          subject: $("#subject-text").value,
+          text: $("#body-text").value,
+        };
+      }
+
+      function handleSendEmailResponse(response) {
         if (response.error) {
           alert(response.error);
         } else {
-          console.log(response);
           $("#subject-text").value = "";
           $("#body-text").value = "";
         }
